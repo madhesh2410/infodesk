@@ -3,6 +3,8 @@ import { Link } from 'react-router-dom';
 import { X, Copy, ExternalLink, Download, QrCode } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { useToast } from '@/context/ToastContext';
+import { useDemo } from '@/context/DemoContext';
+import { encodeFormPayload } from '@/lib/form-payload';
 
 interface PublishDialogProps {
   open: boolean;
@@ -14,11 +16,21 @@ interface PublishDialogProps {
 
 export function PublishDialog({ open, onClose, formId, slug, title }: PublishDialogProps) {
   const toast = useToast();
+  const { forms } = useDemo();
 
+  const targetForm = forms.find(f => f.id === formId || f.slug === slug);
+
+  // Portable form URL with payload so QR code and links work seamlessly across any phone or device
   const formUrl = useMemo(() => {
     const base = window.location.origin;
+    if (targetForm) {
+      const payload = encodeFormPayload(targetForm);
+      if (payload) {
+        return `${base}/f/${slug}?d=${payload}`;
+      }
+    }
     return `${base}/f/${slug}`;
-  }, [slug]);
+  }, [slug, targetForm]);
 
   if (!open) return null;
 

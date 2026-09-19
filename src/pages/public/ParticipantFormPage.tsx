@@ -1,16 +1,88 @@
-import { useParams, Navigate, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useDemo } from '@/context/DemoContext';
 import { FormRenderer } from '@/components/forms/FormRenderer';
-import { useAuth } from '@/context/AuthContext';
-import { Building2 } from 'lucide-react';
+import { Building2, RefreshCw } from 'lucide-react';
+import { decodeFormPayload } from '@/lib/form-payload';
+import { useState, useEffect } from 'react';
+import type { Form } from '@/types';
+import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 
 export default function ParticipantFormPage() {
   const { slug } = useParams<{ slug: string }>();
+  const [searchParams] = useSearchParams();
   const { forms, addResponse } = useDemo();
   const navigate = useNavigate();
+  const [remoteForm, setRemoteForm] = useState<Form | null>(null);
+  const [loading, setLoading] = useState(false);
 
-  // Find form by slug
-  const form = forms.find(f => f.slug === slug);
+  // 1. Check local context (creator device)
+  const localForm = forms.find(f => f.slug === slug);
+
+  // 2. Check URL payload (?d=...) or Supabase database for external participants / mobile scanners
+  useEffect(() => {
+    if (localForm) return;
+
+    const dataPayload = searchParams.get('d');
+    if (dataPayload) {
+      const decoded = decodeFormPayload(dataPayload);
+      if (decoded) {
+        setRemoteForm(decoded);
+        return;
+      }
+    }
+
+    // 3. Fallback: Query Supabase
+    async function loadFromDb() {
+      if (isSupabaseConfigured() && supabase && slug) {
+        setLoading(true);
+        try {
+          const { data, error } = await supabase
+            .from('forms')
+            .select('*')
+            .eq('slug', slug)
+            .maybeSingle();
+
+          if (!error && data) {
+            const parsedForm: Form = {
+              id: data.id,
+              organization_id: data.organization_id || 'org-public',
+              created_by: data.user_id || 'creator',
+              title: data.title,
+              description: data.description,
+              category: data.category,
+              slug: data.slug,
+              status: data.status,
+              created_at: data.created_at,
+              updated_at: data.updated_at,
+              response_count: data.response_count || 0,
+              fields: data.schema?.fields || [],
+              settings: data.schema?.settings || {},
+            };
+            setRemoteForm(parsedForm);
+          }
+        } catch (e) {
+          console.warn('Could not fetch form from Supabase:', e);
+        } finally {
+          setLoading(false);
+        }
+      }
+    }
+
+    loadFromDb();
+  }, [slug, searchParams, localForm]);
+
+  const form = localForm || remoteForm;
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-[var(--color-bg)] flex items-center justify-center p-6">
+        <div className="flex flex-col items-center gap-3 text-[var(--color-text-secondary)]">
+          <RefreshCw className="h-6 w-6 animate-spin text-[var(--color-primary)]" />
+          <span className="text-xs font-medium">Loading form…</span>
+        </div>
+      </div>
+    );
+  }
 
   if (!form) {
     return (
