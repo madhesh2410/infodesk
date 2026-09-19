@@ -97,6 +97,12 @@ export async function createUserProfile(params: {
   department?: string;
   other_info?: string;
 }): Promise<UserProfile> {
+  // Check if profile already exists to avoid overwriting customized data
+  const existing = await fetchUserProfile(params.auth_user_id);
+  if (existing) {
+    return existing;
+  }
+
   const newProfile: UserProfile = {
     auth_user_id: params.auth_user_id,
     full_name: params.full_name || params.email.split('@')[0] || 'User',

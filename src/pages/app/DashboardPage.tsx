@@ -34,7 +34,7 @@ function getGreetingName(fullName?: string): string {
 
 export default function DashboardPage() {
   const { user } = useAuth();
-  const { forms, responses } = useDemo();
+  const { forms, responses, emailLogs } = useDemo();
   const navigate = useNavigate();
   const [createModalOpen, setCreateModalOpen] = useState(false);
 
@@ -42,16 +42,16 @@ export default function DashboardPage() {
   const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
 
   const totalForms = forms.length;
-  const activeForms = forms.filter(f => f.status === 'published').length;
   const allResponses = Object.values(responses).flat();
   const totalResponses = allResponses.length;
-  const totalDuplicates = allResponses.filter(r => r.is_duplicate && r.duplicate_status !== 'resolved_legitimate').length;
+  const totalDocuments = allResponses.reduce((acc, r) => acc + (r.files?.length || 0), 0);
+  const totalEmails = emailLogs?.length || 0;
 
   const stats = [
-    { label: 'Total Forms', value: totalForms, icon: <FileText className="h-4 w-4" />, color: 'text-indigo-600 bg-indigo-50' },
-    { label: 'Active Forms', value: activeForms, icon: <TrendingUp className="h-4 w-4" />, color: 'text-green-600 bg-green-50' },
-    { label: 'Total Responses', value: totalResponses, icon: <MessageSquare className="h-4 w-4" />, color: 'text-blue-600 bg-blue-50' },
-    { label: 'Possible Duplicates', value: totalDuplicates, icon: <AlertTriangle className="h-4 w-4" />, color: totalDuplicates > 0 ? 'text-amber-600 bg-amber-50' : 'text-purple-600 bg-purple-50' },
+    { label: 'Forms', value: totalForms, icon: <FileText className="h-4 w-4" />, color: 'text-indigo-600 bg-indigo-50' },
+    { label: 'Responses', value: totalResponses, icon: <MessageSquare className="h-4 w-4" />, color: 'text-blue-600 bg-blue-50' },
+    { label: 'Documents', value: totalDocuments, icon: <FileText className="h-4 w-4" />, color: 'text-emerald-600 bg-emerald-50' },
+    { label: 'Emails', value: totalEmails, icon: <Mail className="h-4 w-4" />, color: 'text-purple-600 bg-purple-50' },
   ];
 
   const recentForms = forms.slice(0, 5);
@@ -95,7 +95,7 @@ export default function DashboardPage() {
           </div>
           <div className="max-w-md mx-auto space-y-1.5">
             <h2 className="text-lg font-bold text-[var(--color-text-primary)]">
-              Start collecting information by creating your first form
+              Welcome to InfoDesk
             </h2>
             <p className="text-xs text-[var(--color-text-secondary)] leading-relaxed">
               Describe what you want to collect and let our AI build the schema, or design your form step-by-step with the manual builder.

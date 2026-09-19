@@ -14,6 +14,7 @@ interface AuthContextValue {
   resetPassword: (email: string) => Promise<{ error: string | null }>;
   resendConfirmation: (email: string) => Promise<{ error: string | null }>;
   updateProfile: (updates: { full_name?: string; timezone?: string }) => Promise<void>;
+  syncSession: (sessionUser?: any) => Promise<AuthUser | null>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -61,6 +62,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return authUser;
   }, []);
 
+  // Explicit session synchronization to eliminate race conditions
+  const syncSession = useCallback(async (sessionUser?: any): Promise<AuthUser | null> => {
+    try {
+      let targetUser = sessionUser;
+      if (!targetUser && isSupabaseConfigured() && supabase) {
+        const { data: { session } } = await supabase.auth.getSession();
+        targetUser = session?.user;
+      }
+      if (!targetUser) {
+        setUser(null);
+        setLoading(false);
+        return null;
+      }
+      const authUser = await syncSupabaseUser(targetUser);
+      setUser(authUser);
+      setLoading(false);
+      return authUser;
+    } catch (err) {
+      console.error('[AuthContext] syncSession error:', err);
+      setLoading(false);
+      return null;
+    }
+  }, [syncSupabaseUser]);
+
   // Initialize session on mount
   useEffect(() => {
     let mounted = true;
@@ -78,8 +103,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             }
           }
         } catch (e) {
-          console.warn('Error checking Supabase session:', e);
+          console.warn('[AuthContext] Error checking Supabase session:', e);
         }
+      }
+
+      // If URL is /auth/callback, don't prematurely set loading to false; let AuthCallbackPage complete PKCE exchange
+      if (typeof window !== 'undefined' && window.location.pathname.startsWith('/auth/callback')) {
+        return;
       }
 
       if (mounted) {
@@ -101,11 +131,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           return;
         }
 
-        if (session?.user) {
-          const authUser = await syncSupabaseUser(session.user);
-          if (mounted) {
-            setUser(authUser);
-            setLoading(false);
+        if (
+          event === 'INITIAL_SESSION' ||
+          event === 'SIGNED_IN' ||
+          event === 'TOKEN_REFRESHED' ||
+          event === 'USER_UPDATED'
+        ) {
+          if (session?.user) {
+            try {
+              const authUser = await syncSupabaseUser(session.user);
+              if (mounted) {
+                setUser(authUser);
+                setLoading(false);
+              }
+            } catch (err) {
+              console.error('[AuthContext] Error syncing user on auth event:', event, err);
+              if (mounted) {
+                setLoading(false);
+              }
+            }
           }
         }
       });
@@ -155,14 +199,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Google OAuth Sign-In
   const signInWithGoogle = useCallback(async (): Promise<{ error: string | null }> => {
     if (!isSupabaseConfigured() || !supabase) {
-      return {
-        error: 'Google sign-in is not configured yet. Please contact the administrator.',
-      };
+      const errorMsg = 'Authentication backend is not configured. Please check VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.';
+      console.error('[Google OAuth] Error:', errorMsg);
+      return { error: errorMsg };
     }
 
     try {
       const redirectUrl = getOAuthRedirectUrl();
-      const { error } = await supabase.auth.signInWithOAuth({
+      const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
           redirectTo: redirectUrl,
@@ -174,12 +218,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       });
 
       if (error) {
+        console.error('[Google OAuth] Supabase returned error:', error);
         return { error: `Google sign-in failed: ${error.message}` };
+      }
+
+      // If data.url is returned, navigate to the provider URL if not already assigned
+      if (data?.url && typeof window !== 'undefined') {
+        window.location.assign(data.url);
       }
 
       return { error: null };
     } catch (err: any) {
-      return { error: err.message ?? 'Google sign-in failed. Please try again.' };
+      console.error('[Google OAuth] Unexpected error:', err);
+      return { error: err?.message ?? 'Google sign-in failed. Please try again.' };
     }
   }, []);
 
@@ -302,6 +353,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     resetPassword,
     resendConfirmation,
     updateProfile,
+    syncSession,
   };
 
   return (
