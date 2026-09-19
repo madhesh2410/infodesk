@@ -1,0 +1,163 @@
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
+import { formatDateTime } from './utils';
+import type { FormResponse, Form } from '@/types';
+
+export function generateResponsePDF(response: FormResponse, form?: Form): void {
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+
+  const pageW = doc.internal.pageSize.getWidth();
+  const margin = 20;
+  let y = margin;
+
+  // Header bar
+  doc.setFillColor(55, 48, 163); // indigo-700
+  doc.rect(0, 0, pageW, 28, 'F');
+
+  doc.setTextColor(255, 255, 255);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(16);
+  doc.text('InfoDesk', margin, 16);
+  doc.setFontSize(9);
+  doc.setFont('helvetica', 'normal');
+  doc.text('Collect. Organize. Access.', margin, 22);
+
+  y = 38;
+
+  // Form title & metadata
+  doc.setTextColor(17, 24, 39);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(14);
+  doc.text(form?.title ?? response.form_title, margin, y);
+  y += 8;
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  doc.setTextColor(107, 114, 128);
+  doc.text(`Response ID: ${response.response_id}`, margin, y);
+  doc.text(`Submitted: ${formatDateTime(response.submitted_at)}`, pageW / 2, y);
+  y += 4;
+
+  const statusColors: Record<string, [number, number, number]> = {
+    complete: [34, 197, 94],
+    approved: [34, 197, 94],
+    pending_review: [245, 158, 11],
+    incomplete: [239, 68, 68],
+    rejected: [239, 68, 68],
+  };
+  const [r, g, b] = statusColors[response.status] ?? [107, 114, 128];
+  doc.setTextColor(r, g, b);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9);
+  doc.text(`Status: ${response.status.replace('_', ' ').toUpperCase()}`, margin, y + 4);
+  y += 12;
+
+  // Divider
+  doc.setDrawColor(229, 231, 235);
+  doc.line(margin, y, pageW - margin, y);
+  y += 8;
+
+  // Group answers into sections
+  const sections: { title: string; rows: [string, string][] }[] = [];
+
+  // Parse form fields for section grouping
+  if (form?.fields) {
+    let currentSection = 'Information';
+    let currentRows: [string, string][] = [];
+
+    const sorted = [...form.fields].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+    for (const field of sorted) {
+      if (field.type === 'section') {
+        if (currentRows.length > 0) {
+          sections.push({ title: currentSection, rows: currentRows });
+          currentRows = [];
+        }
+        currentSection = field.section_title ?? 'Information';
+      } else {
+        const answer = response.answers.find(a => a.field_id === field.id);
+        const val = answer?.value;
+        const displayVal = Array.isArray(val) ? val.join(', ') : val === null ? '—' : String(val ?? '—');
+        currentRows.push([field.label, displayVal]);
+      }
+    }
+    if (currentRows.length > 0) {
+      sections.push({ title: currentSection, rows: currentRows });
+    }
+  } else {
+    // Fallback: flat table
+    const rows: [string, string][] = response.answers.map(a => {
+      const val = a.value;
+      const displayVal = Array.isArray(val) ? val.join(', ') : val === null ? '—' : String(val ?? '—');
+      return [a.field_label, displayVal];
+    });
+    sections.push({ title: 'Submitted Information', rows });
+  }
+
+  // Render sections
+  for (const section of sections) {
+    if (y > 250) { doc.addPage(); y = margin; }
+
+    doc.setTextColor(55, 48, 163);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    doc.text(section.title.toUpperCase(), margin, y);
+    y += 4;
+
+    autoTable(doc, {
+      startY: y,
+      head: [],
+      body: section.rows,
+      theme: 'striped',
+      styles: { fontSize: 9, cellPadding: 3 },
+      columnStyles: {
+        0: { fontStyle: 'bold', cellWidth: 60, textColor: [55, 65, 81] },
+        1: { textColor: [17, 24, 39] },
+      },
+      margin: { left: margin, right: margin },
+      headStyles: { fillColor: [55, 48, 163] },
+      alternateRowStyles: { fillColor: [249, 250, 251] },
+    });
+
+    y = (doc as any).lastAutoTable.finalY + 10;
+  }
+
+  // Documents section
+  if (response.files.length > 0) {
+    if (y > 240) { doc.addPage(); y = margin; }
+    doc.setTextColor(55, 48, 163);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    doc.text('DOCUMENTS', margin, y);
+    y += 4;
+
+    autoTable(doc, {
+      startY: y,
+      head: [['Document', 'File Type', 'Status']],
+      body: response.files.map(f => [f.field_label, f.type, f.status.toUpperCase()]),
+      theme: 'striped',
+      styles: { fontSize: 9 },
+      headStyles: { fillColor: [55, 48, 163] },
+      alternateRowStyles: { fillColor: [249, 250, 251] },
+      margin: { left: margin, right: margin },
+    });
+
+    y = (doc as any).lastAutoTable.finalY + 10;
+  }
+
+  // Footer
+  const totalPages = doc.getNumberOfPages();
+  for (let i = 1; i <= totalPages; i++) {
+    doc.setPage(i);
+    doc.setFontSize(8);
+    doc.setTextColor(156, 163, 175);
+    doc.setFont('helvetica', 'normal');
+    doc.text(
+      `Generated by InfoDesk • ${new Date().toLocaleDateString('en-IN')} • Page ${i} of ${totalPages}`,
+      pageW / 2,
+      doc.internal.pageSize.getHeight() - 10,
+      { align: 'center' }
+    );
+  }
+
+  doc.save(`${response.response_id}.pdf`);
+}
