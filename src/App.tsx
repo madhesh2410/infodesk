@@ -8,7 +8,6 @@ import { AppLayout } from '@/components/layout/AppLayout';
 // Public pages
 import LandingPage from '@/pages/public/LandingPage';
 import LoginPage from '@/pages/public/LoginPage';
-import AuthCallbackPage from '@/pages/public/AuthCallbackPage';
 import ParticipantFormPage from '@/pages/public/ParticipantFormPage';
 import SubmissionSuccessPage from '@/pages/public/SubmissionSuccessPage';
 
@@ -39,7 +38,7 @@ export default function App() {
               {/* Public routes */}
               <Route path="/" element={<LandingPage />} />
               <Route path="/login" element={<LoginPage />} />
-              <Route path="/auth/callback" element={<AuthCallbackPage />} />
+              <Route path="/auth/callback" element={<Navigate to="/login" replace />} />
               <Route path="/f/:slug" element={<ParticipantFormPage />} />
               <Route path="/submission-success/:responseId" element={<SubmissionSuccessPage />} />
 

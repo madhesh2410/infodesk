@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import type { AuthUser, UserRole } from '@/types';
-import { supabase, isSupabaseConfigured, getOAuthRedirectUrl } from '@/lib/supabase';
+import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import { fetchUserProfile, createUserProfile, updateUserProfile } from '@/lib/profile-service';
 
 interface AuthContextValue {
@@ -8,7 +8,6 @@ interface AuthContextValue {
   loading: boolean;
   isConfigured: boolean;
   signIn: (email: string, password: string) => Promise<{ error: string | null }>;
-  signInWithGoogle: () => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
   signUp: (email: string, password: string, fullName: string) => Promise<{ error: string | null }>;
   resetPassword: (email: string) => Promise<{ error: string | null }>;
@@ -30,7 +29,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const metadata = sessionUser.user_metadata ?? {};
     const displayName = metadata.full_name || metadata.name || email.split('@')[0] || 'User';
     const avatarUrl = metadata.avatar_url || metadata.picture;
-    const provider = sessionUser.app_metadata?.provider === 'google' ? 'google' : 'email';
+    const provider = sessionUser.app_metadata?.provider || 'email';
 
     // 1. Fetch profile from database
     let profile = await fetchUserProfile(authUserId);
@@ -196,43 +195,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [syncSupabaseUser]);
 
-  // Google OAuth Sign-In
-  const signInWithGoogle = useCallback(async (): Promise<{ error: string | null }> => {
-    if (!isSupabaseConfigured() || !supabase) {
-      const errorMsg = 'Authentication backend is not configured. Please check VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.';
-      console.error('[Google OAuth] Error:', errorMsg);
-      return { error: errorMsg };
-    }
-
-    try {
-      const redirectUrl = getOAuthRedirectUrl();
-      const { data, error } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: {
-          redirectTo: redirectUrl,
-          queryParams: {
-            prompt: 'select_account',
-            access_type: 'offline',
-          },
-        },
-      });
-
-      if (error) {
-        console.error('[Google OAuth] Supabase returned error:', error);
-        return { error: `Google sign-in failed: ${error.message}` };
-      }
-
-      // If data.url is returned, navigate to the provider URL if not already assigned
-      if (data?.url && typeof window !== 'undefined') {
-        window.location.assign(data.url);
-      }
-
-      return { error: null };
-    } catch (err: any) {
-      console.error('[Google OAuth] Unexpected error:', err);
-      return { error: err?.message ?? 'Google sign-in failed. Please try again.' };
-    }
-  }, []);
 
   // Sign out
   const signOut = useCallback(async () => {
@@ -347,7 +309,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     loading,
     isConfigured: isSupabaseConfigured(),
     signIn,
-    signInWithGoogle,
     signOut,
     signUp,
     resetPassword,

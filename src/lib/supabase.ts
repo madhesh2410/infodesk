@@ -16,12 +16,6 @@ export function isSupabaseConfigured(): boolean {
   );
 }
 
-export function getOAuthRedirectUrl(): string {
-  if (typeof window !== 'undefined') {
-    return `${window.location.origin}/auth/callback`;
-  }
-  return '/auth/callback';
-}
 
 export const supabase = isSupabaseConfigured()
   ? createClient(supabaseUrl, supabaseAnonKey, {
